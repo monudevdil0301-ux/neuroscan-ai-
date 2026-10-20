@@ -1,5 +1,5 @@
 import React from 'react';
-import { FileText, CheckCircle2, ChevronRight, BarChart3, Stethoscope, AlertTriangle } from 'lucide-react';
+import { FileText, CheckCircle2, ChevronRight, BarChart3, Stethoscope, AlertTriangle, Download, GitFork } from 'lucide-react';
 import type { DiagnosticAssessment } from '../types';
 
 interface DiagnosticSummaryProps {
@@ -19,13 +19,25 @@ export const DiagnosticSummary: React.FC<DiagnosticSummaryProps> = ({ assessment
   const circumference = 2 * Math.PI * radius;
   const strokeDashoffset = circumference - (compositeRiskScore / 100) * circumference;
 
+  // Export raw JSON dataset
+  const handleExportJSON = () => {
+    const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(assessment, null, 2));
+    const downloadAnchor = document.createElement('a');
+    downloadAnchor.setAttribute("href", dataStr);
+    downloadAnchor.setAttribute("download", `neuroscan-telemetry-${assessment.sessionHash}.json`);
+    document.body.appendChild(downloadAnchor);
+    downloadAnchor.click();
+    downloadAnchor.remove();
+  };
+
   return (
     <div className="bg-slate-900/80 rounded-2xl border border-slate-800 p-6 shadow-2xl space-y-6">
+      {/* Header */}
       <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-800 pb-4">
         <div>
           <div className="flex items-center gap-2">
+            <Stethoscope className="w-5 h-5 text-cyan-400" />
             <h2 className="text-lg font-bold text-white flex items-center gap-2">
-              <Stethoscope className="w-5 h-5 text-cyan-400" />
               Multi-Modal Clinical Diagnostic Assessment
             </h2>
             <span className="text-xs px-2 py-0.5 rounded font-mono bg-slate-800 text-slate-300 border border-slate-700">
@@ -37,16 +49,28 @@ export const DiagnosticSummary: React.FC<DiagnosticSummaryProps> = ({ assessment
           </p>
         </div>
 
-        <button
-          onClick={onOpenReport}
-          className="flex items-center gap-2 px-4 py-2 text-xs font-bold text-slate-950 bg-gradient-to-r from-cyan-400 to-teal-400 hover:from-cyan-300 hover:to-teal-300 rounded-xl shadow-lg shadow-cyan-500/20 transition-all transform active:scale-95"
-        >
-          <FileText className="w-4 h-4" />
-          <span>Generate Full CDS Clinical Report</span>
-          <ChevronRight className="w-3.5 h-3.5" />
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={handleExportJSON}
+            className="flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-slate-300 hover:text-white bg-slate-800 hover:bg-slate-750 border border-slate-750 rounded-xl transition-all"
+            title="Download Raw Telemetry as JSON"
+          >
+            <Download className="w-3.5 h-3.5 text-cyan-400" />
+            <span>Raw Data (.JSON)</span>
+          </button>
+
+          <button
+            onClick={onOpenReport}
+            className="flex items-center gap-2 px-4 py-2 text-xs font-bold text-slate-950 bg-gradient-to-r from-cyan-400 to-teal-400 hover:from-cyan-300 hover:to-teal-300 rounded-xl shadow-lg shadow-cyan-500/20 transition-all transform active:scale-95"
+          >
+            <FileText className="w-4 h-4" />
+            <span>Generate Full CDS Clinical Report</span>
+            <ChevronRight className="w-3.5 h-3.5" />
+          </button>
+        </div>
       </div>
 
+      {/* KPI Row */}
       <div className="grid grid-cols-1 md:grid-cols-12 gap-5 items-center">
         <div className="md:col-span-4 bg-slate-950 p-5 rounded-2xl border border-slate-800 flex items-center justify-center gap-5">
           <div className="relative w-32 h-32 flex items-center justify-center shrink-0">
@@ -136,6 +160,56 @@ export const DiagnosticSummary: React.FC<DiagnosticSummaryProps> = ({ assessment
         </div>
       </div>
 
+      {/* Differential Diagnosis Clinical Matrix */}
+      <div className="p-4 rounded-xl bg-slate-950 border border-slate-800 space-y-3">
+        <div className="flex items-center justify-between">
+          <h3 className="text-xs font-bold text-slate-200 uppercase tracking-wider flex items-center gap-2">
+            <GitFork className="w-4 h-4 text-cyan-400" />
+            Automated Differential Diagnosis Matrix
+          </h3>
+          <span className="text-[11px] font-mono text-cyan-400">Bhatia et al. Clinical Framework</span>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
+          <div className={`p-3 rounded-lg border ${compositeRiskScore >= 40 && assessment.biomarkers[0].value <= 6.2 ? 'bg-cyan-950/40 border-cyan-500/60' : 'bg-slate-900 border-slate-800'}`}>
+            <div className="flex justify-between items-center mb-1">
+              <span className="font-bold text-slate-200">Idiopathic Parkinson's</span>
+              <span className="text-[10px] font-mono font-bold text-cyan-400">
+                {compositeRiskScore >= 40 && assessment.biomarkers[0].value <= 6.2 ? 'Primary Match' : 'Secondary'}
+              </span>
+            </div>
+            <p className="text-[11px] text-slate-400">
+              Characterized by 4–6 Hz pill-rolling rest tremor, progressive tapping amplitude decay, and micrographia.
+            </p>
+          </div>
+
+          <div className={`p-3 rounded-lg border ${assessment.biomarkers[0].value > 7.0 ? 'bg-cyan-950/40 border-cyan-500/60' : 'bg-slate-900 border-slate-800'}`}>
+            <div className="flex justify-between items-center mb-1">
+              <span className="font-bold text-slate-200">Essential Tremor (ET)</span>
+              <span className="text-[10px] font-mono font-bold text-cyan-400">
+                {assessment.biomarkers[0].value > 7.0 ? 'Primary Match' : 'Low Probability'}
+              </span>
+            </div>
+            <p className="text-[11px] text-slate-400">
+              High-frequency (8–12 Hz) action/kinetic tremor with preserved tapping rhythm and absent micrographia.
+            </p>
+          </div>
+
+          <div className={`p-3 rounded-lg border ${compositeRiskScore < 20 ? 'bg-emerald-950/40 border-emerald-500/60' : 'bg-slate-900 border-slate-800'}`}>
+            <div className="flex justify-between items-center mb-1">
+              <span className="font-bold text-slate-200">Normative Aging</span>
+              <span className="text-[10px] font-mono font-bold text-emerald-400">
+                {compositeRiskScore < 20 ? 'Normal' : 'Excluded'}
+              </span>
+            </div>
+            <p className="text-[11px] text-slate-400">
+              Kinematics and acoustic perturbation indices within healthy population percentiles (&lt;1.04% Jitter).
+            </p>
+          </div>
+        </div>
+      </div>
+
+      {/* Biomarker Table */}
       <div className="space-y-3">
         <div className="flex items-center justify-between">
           <h3 className="text-sm font-bold text-white flex items-center gap-2">
@@ -204,6 +278,7 @@ export const DiagnosticSummary: React.FC<DiagnosticSummaryProps> = ({ assessment
         </div>
       </div>
 
+      {/* Observations & Recommendations */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div className="p-4 rounded-xl bg-slate-950 border border-slate-800 space-y-2">
           <h4 className="text-xs font-bold uppercase tracking-wider text-slate-300">

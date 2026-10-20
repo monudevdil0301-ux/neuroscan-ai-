@@ -1,5 +1,5 @@
 import React from 'react';
-import { Activity, FileText, BookOpen, RotateCcw, Sparkles } from 'lucide-react';
+import { Activity, FileText, BookOpen, RotateCcw, Sparkles, PlayCircle } from 'lucide-react';
 import type { ClinicalPresetId } from '../types';
 import { CLINICAL_PRESETS } from '../data/clinicalBenchmarks';
 
@@ -8,6 +8,7 @@ interface NavbarProps {
   onSelectPreset: (presetId: ClinicalPresetId) => void;
   onOpenReport: () => void;
   onOpenLiterature: () => void;
+  onStartGuidedExam: () => void;
   onResetSession: () => void;
   riskScore: number;
 }
@@ -17,6 +18,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   onSelectPreset,
   onOpenReport,
   onOpenLiterature,
+  onStartGuidedExam,
   onResetSession,
   riskScore,
 }) => {
@@ -67,12 +69,21 @@ export const Navbar: React.FC<NavbarProps> = ({
         {/* Action Controls */}
         <div className="flex items-center gap-2 sm:gap-3">
           <button
+            onClick={onStartGuidedExam}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-slate-950 bg-gradient-to-r from-amber-400 to-amber-300 hover:from-amber-300 hover:to-amber-200 rounded-lg shadow-md shadow-amber-500/20 transition-all transform active:scale-95"
+            title="Start Guided Patient Exam Wizard"
+          >
+            <PlayCircle className="w-4 h-4" />
+            <span className="hidden sm:inline">Guided Exam</span>
+          </button>
+
+          <button
             onClick={onOpenLiterature}
             className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-slate-300 hover:text-white bg-slate-800/80 hover:bg-slate-800 border border-slate-700/80 rounded-lg transition-all"
             title="Scientific Methodology & Literature"
           >
             <BookOpen className="w-3.5 h-3.5 text-cyan-400" />
-            <span className="hidden sm:inline">Methodology & Citations</span>
+            <span className="hidden sm:inline">Citations</span>
           </button>
 
           <button
@@ -90,7 +101,7 @@ export const Navbar: React.FC<NavbarProps> = ({
           <button
             onClick={onResetSession}
             className="p-1.5 text-slate-400 hover:text-slate-200 hover:bg-slate-800 rounded-lg transition-colors"
-            title="Reset to Live State"
+            title="Reset to Baseline"
           >
             <RotateCcw className="w-4 h-4" />
           </button>

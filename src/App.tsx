@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Brain } from 'lucide-react';
+import { Brain, Sparkles, PlayCircle } from 'lucide-react';
 
 import type {
   ClinicalPresetId,
@@ -17,8 +17,10 @@ import { TremorModule } from './components/TremorModule';
 import { VoiceModule } from './components/VoiceModule';
 import { SpiralModule } from './components/SpiralModule';
 import { DiagnosticSummary } from './components/DiagnosticSummary';
+import { PathophysiologyExplorer } from './components/PathophysiologyExplorer';
 import { ClinicalReportModal } from './components/ClinicalReportModal';
 import { ScientificLiteratureModal } from './components/ScientificLiteratureModal';
+import { GuidedExamModal } from './components/GuidedExamModal';
 
 export const App: React.FC = () => {
   const [selectedPresetId, setSelectedPresetId] = useState<ClinicalPresetId>('early-pd');
@@ -30,6 +32,7 @@ export const App: React.FC = () => {
 
   const [isReportOpen, setIsReportOpen] = useState(false);
   const [isLiteratureOpen, setIsLiteratureOpen] = useState(false);
+  const [isGuidedExamOpen, setIsGuidedExamOpen] = useState(false);
 
   const handleSelectPreset = (id: ClinicalPresetId) => {
     setSelectedPresetId(id);
@@ -69,6 +72,7 @@ export const App: React.FC = () => {
         onSelectPreset={handleSelectPreset}
         onOpenReport={() => setIsReportOpen(true)}
         onOpenLiterature={() => setIsLiteratureOpen(true)}
+        onStartGuidedExam={() => setIsGuidedExamOpen(true)}
         onResetSession={handleResetSession}
         riskScore={assessment.compositeRiskScore}
       />
@@ -95,6 +99,25 @@ export const App: React.FC = () => {
               <p className="text-xs sm:text-sm text-slate-300 leading-relaxed">
                 NeuroScan AI bridges the clinical specialist gap by capturing sub-clinical resting tremor (4–6 Hz), bradykinesia rhythm fatigue, acoustic dysarthria perturbation (Jitter/Shimmer), and micrographia directly through standard webcams, microphones, and touchscreens.
               </p>
+
+              {/* Quick Actions */}
+              <div className="pt-2 flex flex-wrap items-center gap-3">
+                <button
+                  onClick={() => setIsGuidedExamOpen(true)}
+                  className="flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold bg-gradient-to-r from-cyan-400 to-teal-400 hover:from-cyan-300 hover:to-teal-300 text-slate-950 shadow-lg shadow-cyan-500/20 transition-all transform active:scale-95"
+                >
+                  <PlayCircle className="w-4 h-4" />
+                  <span>Start 3-Minute Guided Exam Protocol</span>
+                </button>
+
+                <button
+                  onClick={() => setIsLiteratureOpen(true)}
+                  className="flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-medium bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition-all"
+                >
+                  <Sparkles className="w-3.5 h-3.5 text-cyan-400" />
+                  <span>Clinical Validation & Literature</span>
+                </button>
+              </div>
             </div>
 
             {/* Current Active Patient Info Card */}
@@ -141,6 +164,11 @@ export const App: React.FC = () => {
             onUpdate={handleUpdateSpiral}
           />
         </div>
+
+        {/* Pathophysiology & Pharmacodynamics Circuit Explorer */}
+        <PathophysiologyExplorer
+          currentRiskScore={assessment.compositeRiskScore}
+        />
 
         {/* Diagnostic Assessment & Explainable AI */}
         <DiagnosticSummary
@@ -192,6 +220,13 @@ export const App: React.FC = () => {
       <ScientificLiteratureModal
         isOpen={isLiteratureOpen}
         onClose={() => setIsLiteratureOpen(false)}
+      />
+
+      <GuidedExamModal
+        isOpen={isGuidedExamOpen}
+        onClose={() => setIsGuidedExamOpen(false)}
+        onComplete={() => {}}
+        onOpenReport={() => setIsReportOpen(true)}
       />
     </div>
   );
