@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Mic, MicOff, Volume2, Activity, AlertCircle } from 'lucide-react';
+import { Mic, MicOff, Volume2, Activity, AlertCircle, Upload, FileAudio } from 'lucide-react';
 import type { VoiceAnalysisResult } from '../types';
 import { analyzeVoiceAcoustics } from '../utils/signalProcessing';
 
@@ -14,6 +14,7 @@ export const VoiceModule: React.FC<VoiceModuleProps> = ({ initialResult, onUpdat
   const [countdown, setCountdown] = useState(5);
   const [micError, setMicError] = useState<string | null>(null);
   const [isPlayingSynthSample, setIsPlayingSynthSample] = useState(false);
+  const [uploadedAudioName, setUploadedAudioName] = useState<string | null>(null);
 
   const [currentResult, setCurrentResult] = useState<VoiceAnalysisResult>(initialResult);
 
@@ -21,6 +22,7 @@ export const VoiceModule: React.FC<VoiceModuleProps> = ({ initialResult, onUpdat
   const analyserRef = useRef<AnalyserNode | null>(null);
   const micStreamRef = useRef<MediaStream | null>(null);
   const animFrameRef = useRef<number | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const waveformCanvasRef = useRef<HTMLCanvasElement>(null);
   const fftCanvasRef = useRef<HTMLCanvasElement>(null);
@@ -259,6 +261,34 @@ export const VoiceModule: React.FC<VoiceModuleProps> = ({ initialResult, onUpdat
     }, 4000);
   };
 
+  const handleAudioUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    try {
+      setUploadedAudioName(file.name);
+      setMicError(null);
+      const arrayBuffer = await file.arrayBuffer();
+      const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+      const ctx = new AudioContextClass();
+      const audioBuffer = await ctx.decodeAudioData(arrayBuffer);
+      const channelData = audioBuffer.getChannelData(0);
+
+      const analysis = analyzeVoiceAcoustics(channelData, audioBuffer.sampleRate);
+      const updated: VoiceAnalysisResult = {
+        ...analysis,
+        details: `Real audio file analyzed: "${file.name}" (${audioBuffer.duration.toFixed(1)}s, ${audioBuffer.sampleRate} Hz). Jitter: ${analysis.jitterPercent.toFixed(2)}%, Shimmer: ${analysis.shimmerPercent.toFixed(2)}%, F0: ${analysis.fundamentalFrequency} Hz.`,
+      };
+      setCurrentResult(updated);
+      onUpdate(updated);
+      drawSimulatedVoiceCanvases(updated);
+      ctx.close();
+    } catch (err: any) {
+      console.error("Audio decoding error:", err);
+      setMicError(`Could not decode audio file: ${err.message || 'Format not supported'}. Please upload a standard .wav or .mp3 file.`);
+    }
+  };
+
   const stopSynthSample = () => {
     if (audioContextRef.current && audioContextRef.current.state !== 'closed') {
       audioContextRef.current.close();
@@ -299,6 +329,24 @@ export const VoiceModule: React.FC<VoiceModuleProps> = ({ initialResult, onUpdat
         </div>
 
         <div className="flex items-center gap-2">
+          {/* Hidden File Input for Real Audio */}
+          <input
+            type="file"
+            ref={fileInputRef}
+            accept="audio/*"
+            onChange={handleAudioUpload}
+            className="hidden"
+          />
+
+          <button
+            onClick={() => fileInputRef.current?.click()}
+            className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-slate-300 hover:text-white bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-lg transition-all"
+            title="Upload Any Real Audio Recording (.wav, .mp3)"
+          >
+            <Upload className="w-3.5 h-3.5 text-cyan-400" />
+            <span className="hidden sm:inline">Upload Real Audio</span>
+          </button>
+
           <button
             onClick={() => playSynthesizedSample(currentResult.status === 'abnormal')}
             disabled={isPlayingSynthSample}
@@ -306,7 +354,7 @@ export const VoiceModule: React.FC<VoiceModuleProps> = ({ initialResult, onUpdat
             title="Auditory Phonation Simulation"
           >
             <Volume2 className="w-3.5 h-3.5 text-cyan-400" />
-            <span>{isPlayingSynthSample ? 'Playing Vowel...' : 'Hear Vowel Sample'}</span>
+            <span>{isPlayingSynthSample ? 'Playing...' : 'Audio Demo'}</span>
           </button>
 
           <button
@@ -329,6 +377,16 @@ export const VoiceModule: React.FC<VoiceModuleProps> = ({ initialResult, onUpdat
           </button>
         </div>
       </div>
+
+      {uploadedAudioName && (
+        <div className="mb-4 p-2.5 rounded-xl bg-cyan-950/60 border border-cyan-800 text-cyan-300 text-xs flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <FileAudio className="w-4 h-4 text-cyan-400" />
+            <span>Real Patient Audio Decoded: <strong className="text-white font-mono">{uploadedAudioName}</strong></span>
+          </div>
+          <span className="text-[10px] font-mono bg-cyan-900/80 text-cyan-300 px-2 py-0.5 rounded border border-cyan-700">Native WebAudio Float32</span>
+        </div>
+      )}
 
       {micError && (
         <div className="mb-4 p-3 rounded-xl bg-amber-950/40 border border-amber-800/50 text-amber-300 text-xs flex items-start gap-2">

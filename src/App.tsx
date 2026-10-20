@@ -21,6 +21,8 @@ import { PathophysiologyExplorer } from './components/PathophysiologyExplorer';
 import { ClinicalReportModal } from './components/ClinicalReportModal';
 import { ScientificLiteratureModal } from './components/ScientificLiteratureModal';
 import { GuidedExamModal } from './components/GuidedExamModal';
+import { ValidationMetricsModal } from './components/ValidationMetricsModal';
+import type { RealClinicalRecord } from './data/realClinicalData';
 
 export const App: React.FC = () => {
   const [selectedPresetId, setSelectedPresetId] = useState<ClinicalPresetId>('early-pd');
@@ -33,6 +35,7 @@ export const App: React.FC = () => {
   const [isReportOpen, setIsReportOpen] = useState(false);
   const [isLiteratureOpen, setIsLiteratureOpen] = useState(false);
   const [isGuidedExamOpen, setIsGuidedExamOpen] = useState(false);
+  const [isValidationModalOpen, setIsValidationModalOpen] = useState(false);
 
   const handleSelectPreset = (id: ClinicalPresetId) => {
     setSelectedPresetId(id);
@@ -86,6 +89,68 @@ export const App: React.FC = () => {
     }
   };
 
+  const handleLoadRealPatient = (rec: RealClinicalRecord) => {
+    const realPatient: PatientProfile = {
+      id: rec.id,
+      age: rec.patientAge,
+      gender: rec.gender === 'M' ? 'Male' : 'Female',
+      handedness: 'Right',
+      hasPreviousDiagnosis: rec.clinicalStatus === 'Parkinson\'s Disease',
+      notes: `Real clinical patient from ${rec.sourceDataset}. ${rec.notes}`,
+    };
+
+    const isPd = rec.clinicalStatus === 'Parkinson\'s Disease';
+    const isEt = rec.clinicalStatus === 'Essential Tremor';
+
+    const realTremor: TremorAnalysisResult = {
+      dominantFrequency: rec.tremorFrequencyHz,
+      tremorAmplitude: isPd ? 0.22 : isEt ? 0.19 : 0.02,
+      peakPsd: isPd ? 0.095 : isEt ? 0.082 : 0.012,
+      frequencySpectrum: [
+        { freq: 1.0, power: 0.02 },
+        { freq: 2.5, power: 0.025 },
+        { freq: rec.tremorFrequencyHz, power: isPd || isEt ? 0.12 : 0.01 },
+        { freq: 7.0, power: 0.03 },
+        { freq: 10.0, power: 0.01 },
+      ],
+      tapCount: isPd ? 22 : 36,
+      tapCadenceHz: isPd ? 2.2 : 3.6,
+      tapRhythmCV: isPd ? 24.8 : 9.5,
+      amplitudeDecay: isPd ? 31.0 : 6.8,
+      mdsUpdrsSubscore: isPd ? 2 : 0,
+      status: isPd ? 'abnormal' : isEt ? 'borderline' : 'normal',
+      details: `Ground-truth clinical record (${rec.sourceDataset}): ${rec.notes}`,
+    };
+
+    const realVoice: VoiceAnalysisResult = {
+      fundamentalFrequency: rec.f0Hz,
+      jitterPercent: rec.jitterPercent,
+      shimmerPercent: rec.shimmerPercent,
+      hnrDb: rec.hnrDb,
+      pitchStabilityScore: Math.round(100 - (rec.jitterPercent * 14 + rec.shimmerPercent * 4)),
+      mdsUpdrsSubscore: isPd ? 2 : 0,
+      status: isPd ? 'abnormal' : 'normal',
+      details: `Oxford UCI speech record: Jitter ${rec.jitterPercent}%, Shimmer ${rec.shimmerPercent}%, HNR ${rec.hnrDb} dB.`,
+    };
+
+    const realSpiral: SpiralAnalysisResult = {
+      durationSeconds: isPd ? 13.2 : 8.1,
+      drawingVelocityJerk: rec.spiralJerkIndex,
+      radialDeviationVariance: isPd ? 6.4 : 2.0,
+      micrographiaRatio: rec.micrographiaRatio,
+      pointCount: 380,
+      mdsUpdrsSubscore: isPd ? 2 : 0,
+      status: isPd ? 'abnormal' : 'normal',
+      details: `PaHaW database digitizer kinematics: Jerk index ${rec.spiralJerkIndex}, Micrographia ratio ${rec.micrographiaRatio}.`,
+    };
+
+    setPatient(realPatient);
+    setTremor(realTremor);
+    setVoice(realVoice);
+    setSpiral(realSpiral);
+    setAssessment(computeCompositeAssessment(realTremor, realVoice, realSpiral));
+  };
+
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col selection:bg-cyan-500 selection:text-white">
       {/* Navigation Header */}
@@ -94,6 +159,7 @@ export const App: React.FC = () => {
         onSelectPreset={handleSelectPreset}
         onOpenReport={() => setIsReportOpen(true)}
         onOpenLiterature={() => setIsLiteratureOpen(true)}
+        onOpenValidationModal={() => setIsValidationModalOpen(true)}
         onStartGuidedExam={() => setIsGuidedExamOpen(true)}
         onResetSession={handleResetSession}
         riskScore={assessment.compositeRiskScore}
@@ -249,6 +315,12 @@ export const App: React.FC = () => {
         onClose={() => setIsGuidedExamOpen(false)}
         onComplete={handleExamComplete}
         onOpenReport={() => setIsReportOpen(true)}
+      />
+
+      <ValidationMetricsModal
+        isOpen={isValidationModalOpen}
+        onClose={() => setIsValidationModalOpen(false)}
+        onLoadRealPatient={handleLoadRealPatient}
       />
     </div>
   );

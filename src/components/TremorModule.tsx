@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Camera, CameraOff, Hand, Activity, RefreshCw, ShieldAlert } from 'lucide-react';
+import { Camera, CameraOff, Hand, Activity, RefreshCw, ShieldAlert, Upload, FileVideo } from 'lucide-react';
 import type { TremorAnalysisResult } from '../types';
 import { computeFFT, findDominantTremorFrequency, analyzeTappingKinematics } from '../utils/signalProcessing';
 
@@ -16,6 +16,7 @@ export const TremorModule: React.FC<TremorModuleProps> = ({ initialResult, onUpd
   const [tapCountDown, setTapCountDown] = useState(10);
   const [cameraError, setCameraError] = useState<string | null>(null);
   const [isStreamLoading, setIsStreamLoading] = useState(false);
+  const [uploadedVideoName, setUploadedVideoName] = useState<string | null>(null);
 
   const [currentResult, setCurrentResult] = useState<TremorAnalysisResult>(initialResult);
 
@@ -23,6 +24,7 @@ export const TremorModule: React.FC<TremorModuleProps> = ({ initialResult, onUpd
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const waveformCanvasRef = useRef<HTMLCanvasElement>(null);
   const spectrumCanvasRef = useRef<HTMLCanvasElement>(null);
+  const videoFileInputRef = useRef<HTMLInputElement>(null);
 
   const animFrameRef = useRef<number | null>(null);
   const prevImageDataRef = useRef<ImageData | null>(null);
@@ -41,10 +43,13 @@ export const TremorModule: React.FC<TremorModuleProps> = ({ initialResult, onUpd
   }, []);
 
   const stopCamera = () => {
-    if (videoRef.current && videoRef.current.srcObject) {
-      const stream = videoRef.current.srcObject as MediaStream;
-      stream.getTracks().forEach((track) => track.stop());
-      videoRef.current.srcObject = null;
+    if (videoRef.current) {
+      if (videoRef.current.srcObject) {
+        const stream = videoRef.current.srcObject as MediaStream;
+        stream.getTracks().forEach((track) => track.stop());
+        videoRef.current.srcObject = null;
+      }
+      videoRef.current.src = '';
     }
     if (animFrameRef.current) {
       cancelAnimationFrame(animFrameRef.current);
@@ -52,6 +57,33 @@ export const TremorModule: React.FC<TremorModuleProps> = ({ initialResult, onUpd
     }
     setIsWebcamActive(false);
     setIsStreamLoading(false);
+  };
+
+  const handleVideoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    try {
+      setUploadedVideoName(file.name);
+      setCameraError(null);
+      stopCamera();
+
+      const videoUrl = URL.createObjectURL(file);
+      if (videoRef.current) {
+        videoRef.current.srcObject = null;
+        videoRef.current.src = videoUrl;
+        videoRef.current.loop = true;
+        videoRef.current.onloadedmetadata = () => {
+          videoRef.current?.play().then(() => {
+            setIsWebcamActive(true);
+            startVisionTracking();
+          });
+        };
+      }
+    } catch (err: any) {
+      console.error("Video upload error:", err);
+      setCameraError(`Could not load video file: ${err.message || 'Format not supported'}. Try a standard .mp4 or .webm file.`);
+    }
   };
 
   const toggleWebcam = async () => {
@@ -422,6 +454,24 @@ export const TremorModule: React.FC<TremorModuleProps> = ({ initialResult, onUpd
 
         {/* Video Controls */}
         <div className="flex items-center gap-2">
+          {/* Hidden File Input for Real Patient Video */}
+          <input
+            type="file"
+            ref={videoFileInputRef}
+            accept="video/*"
+            onChange={handleVideoUpload}
+            className="hidden"
+          />
+
+          <button
+            onClick={() => videoFileInputRef.current?.click()}
+            className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-slate-300 hover:text-white bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-lg transition-all"
+            title="Upload Any Real Video Recording (.mp4, .webm)"
+          >
+            <Upload className="w-3.5 h-3.5 text-cyan-400" />
+            <span className="hidden sm:inline">Upload Real Video</span>
+          </button>
+
           <button
             onClick={toggleWebcam}
             disabled={isStreamLoading}
@@ -447,6 +497,16 @@ export const TremorModule: React.FC<TremorModuleProps> = ({ initialResult, onUpd
           </button>
         </div>
       </div>
+
+      {uploadedVideoName && (
+        <div className="mb-4 p-2.5 rounded-xl bg-cyan-950/60 border border-cyan-800 text-cyan-300 text-xs flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <FileVideo className="w-4 h-4 text-cyan-400" />
+            <span>Real Patient Video Loaded: <strong className="text-white font-mono">{uploadedVideoName}</strong></span>
+          </div>
+          <span className="text-[10px] font-mono bg-cyan-900/80 text-cyan-300 px-2 py-0.5 rounded border border-cyan-700">Optical Flow Active</span>
+        </div>
+      )}
 
       {cameraError && (
         <div className="mb-4 p-3.5 rounded-xl bg-amber-950/50 border border-amber-800/60 text-amber-300 text-xs space-y-1.5">

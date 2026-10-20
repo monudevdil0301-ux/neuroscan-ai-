@@ -1,5 +1,5 @@
 import React from 'react';
-import { Activity, FileText, BookOpen, RotateCcw, Sparkles, PlayCircle } from 'lucide-react';
+import { Activity, FileText, BookOpen, RotateCcw, Sparkles, PlayCircle, Database } from 'lucide-react';
 import type { ClinicalPresetId } from '../types';
 import { CLINICAL_PRESETS } from '../data/clinicalBenchmarks';
 
@@ -8,6 +8,7 @@ interface NavbarProps {
   onSelectPreset: (presetId: ClinicalPresetId) => void;
   onOpenReport: () => void;
   onOpenLiterature: () => void;
+  onOpenValidationModal: () => void;
   onStartGuidedExam: () => void;
   onResetSession: () => void;
   riskScore: number;
@@ -18,6 +19,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   onSelectPreset,
   onOpenReport,
   onOpenLiterature,
+  onOpenValidationModal,
   onStartGuidedExam,
   onResetSession,
   riskScore,
@@ -75,6 +77,15 @@ export const Navbar: React.FC<NavbarProps> = ({
           >
             <PlayCircle className="w-4 h-4" />
             <span className="hidden sm:inline">Guided Exam</span>
+          </button>
+
+          <button
+            onClick={onOpenValidationModal}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-slate-300 hover:text-white bg-slate-800/80 hover:bg-slate-800 border border-slate-700/80 rounded-lg transition-all"
+            title="Real-World Clinical Trial Datasets (Oxford, PaHaW, mPower)"
+          >
+            <Database className="w-3.5 h-3.5 text-cyan-400" />
+            <span className="hidden sm:inline">Real Datasets</span>
           </button>
 
           <button
