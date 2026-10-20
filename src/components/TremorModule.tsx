@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Camera, CameraOff, Hand, Activity, AlertTriangle } from 'lucide-react';
+import { Camera, CameraOff, Hand, Activity, RefreshCw, ShieldAlert } from 'lucide-react';
 import type { TremorAnalysisResult } from '../types';
 import { computeFFT, findDominantTremorFrequency, analyzeTappingKinematics } from '../utils/signalProcessing';
 
@@ -15,6 +15,7 @@ export const TremorModule: React.FC<TremorModuleProps> = ({ initialResult, onUpd
   const [tapAmplitudes, setTapAmplitudes] = useState<number[]>([]);
   const [tapCountDown, setTapCountDown] = useState(10);
   const [cameraError, setCameraError] = useState<string | null>(null);
+  const [isStreamLoading, setIsStreamLoading] = useState(false);
 
   const [currentResult, setCurrentResult] = useState<TremorAnalysisResult>(initialResult);
 
@@ -26,6 +27,7 @@ export const TremorModule: React.FC<TremorModuleProps> = ({ initialResult, onUpd
   const animFrameRef = useRef<number | null>(null);
   const prevImageDataRef = useRef<ImageData | null>(null);
   const motionHistoryRef = useRef<number[]>([]);
+  const offscreenCanvasRef = useRef<HTMLCanvasElement | null>(null);
 
   useEffect(() => {
     setCurrentResult(initialResult);
@@ -34,151 +36,214 @@ export const TremorModule: React.FC<TremorModuleProps> = ({ initialResult, onUpd
 
   useEffect(() => {
     return () => {
-      if (videoRef.current && videoRef.current.srcObject) {
-        const stream = videoRef.current.srcObject as MediaStream;
-        stream.getTracks().forEach((track) => track.stop());
-      }
-      if (animFrameRef.current) {
-        cancelAnimationFrame(animFrameRef.current);
-      }
+      stopCamera();
     };
   }, []);
+
+  const stopCamera = () => {
+    if (videoRef.current && videoRef.current.srcObject) {
+      const stream = videoRef.current.srcObject as MediaStream;
+      stream.getTracks().forEach((track) => track.stop());
+      videoRef.current.srcObject = null;
+    }
+    if (animFrameRef.current) {
+      cancelAnimationFrame(animFrameRef.current);
+      animFrameRef.current = null;
+    }
+    setIsWebcamActive(false);
+    setIsStreamLoading(false);
+  };
 
   const toggleWebcam = async () => {
     setCameraError(null);
     if (isWebcamActive) {
-      if (videoRef.current && videoRef.current.srcObject) {
-        const stream = videoRef.current.srcObject as MediaStream;
-        stream.getTracks().forEach((track) => track.stop());
-        videoRef.current.srcObject = null;
-      }
-      setIsWebcamActive(false);
-      if (animFrameRef.current) cancelAnimationFrame(animFrameRef.current);
+      stopCamera();
     } else {
+      setIsStreamLoading(true);
       try {
-        const stream = await navigator.mediaDevices.getUserMedia({
-          video: { width: 640, height: 480, frameRate: { ideal: 30 } },
-          audio: false,
-        });
+        // Safe progressive constraints for any browser/webcam
+        let stream: MediaStream;
+        try {
+          stream = await navigator.mediaDevices.getUserMedia({
+            video: {
+              width: { ideal: 640 },
+              height: { ideal: 480 },
+              frameRate: { ideal: 30 },
+            },
+            audio: false,
+          });
+        } catch {
+          // Fallback to basic permissive video constraint
+          stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+        }
+
         if (videoRef.current) {
           videoRef.current.srcObject = stream;
-          videoRef.current.play();
-          setIsWebcamActive(true);
-          startVisionTracking();
+          videoRef.current.onloadedmetadata = () => {
+            videoRef.current?.play().then(() => {
+              setIsWebcamActive(true);
+              setIsStreamLoading(false);
+              startVisionTracking();
+            }).catch((playErr) => {
+              console.error("Video play error:", playErr);
+              setIsStreamLoading(false);
+            });
+          };
         }
       } catch (err: any) {
         console.error("Camera access error:", err);
-        setCameraError("Camera access was blocked or not found. You can test using the built-in clinical benchmark simulation!");
+        setIsStreamLoading(false);
         setIsWebcamActive(false);
+
+        if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
+          setCameraError(
+            "Camera permission was denied. Click the 'View site information' or lock icon in your browser address bar (next to localhost:5173), toggle 'Camera' to Allow, and refresh."
+          );
+        } else if (err.name === 'NotFoundError' || err.name === 'DevicesNotFoundError') {
+          setCameraError("No physical webcam device was detected on your machine. You can use the clinical preset replay mode!");
+        } else if (err.name === 'NotReadableError' || err.name === 'TrackStartError') {
+          setCameraError("Your webcam is currently locked by another application (e.g. Zoom, Teams, Discord, OBS). Please close other apps and try again.");
+        } else {
+          setCameraError(`Camera error (${err.name || 'Unknown'}): ${err.message || 'Could not start camera.'}`);
+        }
       }
     }
   };
 
   const startVisionTracking = () => {
+    if (!offscreenCanvasRef.current) {
+      offscreenCanvasRef.current = document.createElement('canvas');
+      offscreenCanvasRef.current.width = 320;
+      offscreenCanvasRef.current.height = 240;
+    }
+
+    const offCanvas = offscreenCanvasRef.current;
+    const offCtx = offCanvas.getContext('2d', { willReadFrequently: true });
+
     const processFrame = () => {
-      if (!videoRef.current || !canvasRef.current) return;
       const video = videoRef.current;
-      const canvas = canvasRef.current;
-      const ctx = canvas.getContext('2d');
-      if (!ctx || video.readyState < 2) {
+      const overlayCanvas = canvasRef.current;
+      if (!video || !overlayCanvas) return;
+
+      const overlayCtx = overlayCanvas.getContext('2d');
+      if (!overlayCtx) {
         animFrameRef.current = requestAnimationFrame(processFrame);
         return;
       }
 
-      canvas.width = video.videoWidth || 640;
-      canvas.height = video.videoHeight || 480;
+      if (video.videoWidth > 0 && overlayCanvas.width !== video.videoWidth) {
+        overlayCanvas.width = video.videoWidth;
+        overlayCanvas.height = video.videoHeight;
+      }
 
-      ctx.save();
-      ctx.scale(-1, 1);
-      ctx.drawImage(video, -canvas.width, 0, canvas.width, canvas.height);
-      ctx.restore();
+      // Clear transparent HUD canvas
+      overlayCtx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
 
-      const roiWidth = 220;
-      const roiHeight = 220;
-      const roiX = (canvas.width - roiWidth) / 2;
-      const roiY = (canvas.height - roiHeight) / 2;
+      // Draw Region of Interest (ROI) HUD Box
+      const roiWidth = Math.min(220, overlayCanvas.width * 0.5);
+      const roiHeight = Math.min(220, overlayCanvas.height * 0.5);
+      const roiX = (overlayCanvas.width - roiWidth) / 2;
+      const roiY = (overlayCanvas.height - roiHeight) / 2;
 
-      ctx.strokeStyle = '#06b6d4';
-      ctx.lineWidth = 2;
-      ctx.strokeRect(roiX, roiY, roiWidth, roiHeight);
+      // Stroke targeting box
+      overlayCtx.strokeStyle = '#06b6d4';
+      overlayCtx.lineWidth = 2;
+      overlayCtx.strokeRect(roiX, roiY, roiWidth, roiHeight);
 
-      const bLen = 15;
-      ctx.strokeStyle = '#22d3ee';
-      ctx.lineWidth = 3;
-      ctx.beginPath();
-      ctx.moveTo(roiX, roiY + bLen); ctx.lineTo(roiX, roiY); ctx.lineTo(roiX + bLen, roiY);
-      ctx.moveTo(roiX + roiWidth - bLen, roiY); ctx.lineTo(roiX + roiWidth, roiY); ctx.lineTo(roiX + roiWidth, roiY + bLen);
-      ctx.moveTo(roiX, roiY + roiHeight - bLen); ctx.lineTo(roiX, roiY + roiHeight); ctx.lineTo(roiX + bLen, roiY + roiHeight);
-      ctx.moveTo(roiX + roiWidth - bLen, roiY + roiHeight); ctx.lineTo(roiX + roiWidth, roiY + roiHeight); ctx.lineTo(roiX + roiWidth, roiY + roiHeight - bLen);
-      ctx.stroke();
+      // Corner tech brackets
+      const bLen = 16;
+      overlayCtx.strokeStyle = '#22d3ee';
+      overlayCtx.lineWidth = 3;
+      // Top-left
+      overlayCtx.beginPath();
+      overlayCtx.moveTo(roiX, roiY + bLen); overlayCtx.lineTo(roiX, roiY); overlayCtx.lineTo(roiX + bLen, roiY);
+      // Top-right
+      overlayCtx.moveTo(roiX + roiWidth - bLen, roiY); overlayCtx.lineTo(roiX + roiWidth, roiY); overlayCtx.lineTo(roiX + roiWidth, roiY + bLen);
+      // Bottom-left
+      overlayCtx.moveTo(roiX, roiY + roiHeight - bLen); overlayCtx.lineTo(roiX, roiY + roiHeight); overlayCtx.lineTo(roiX + bLen, roiY + roiHeight);
+      // Bottom-right
+      overlayCtx.moveTo(roiX + roiWidth - bLen, roiY + roiHeight); overlayCtx.lineTo(roiX + roiWidth, roiY + roiHeight); overlayCtx.lineTo(roiX + roiWidth, roiY + roiHeight - bLen);
+      overlayCtx.stroke();
 
-      ctx.fillStyle = 'rgba(6, 182, 212, 0.8)';
-      ctx.font = '11px JetBrains Mono, monospace';
-      ctx.fillText('ROI: RESTING HAND / FINGER', roiX + 6, roiY - 6);
+      overlayCtx.fillStyle = '#22d3ee';
+      overlayCtx.font = 'bold 11px JetBrains Mono, monospace';
+      overlayCtx.fillText('TARGET: RESTING HAND / FINGER', roiX + 8, roiY - 8);
 
-      try {
-        const currentFrame = ctx.getImageData(roiX, roiY, roiWidth, roiHeight);
-        let motionSum = 0;
+      // Compute frame difference on scaled offscreen canvas for high performance
+      if (offCtx && video.readyState >= 2) {
+        try {
+          offCtx.drawImage(video, 0, 0, offCanvas.width, offCanvas.height);
 
-        if (prevImageDataRef.current) {
-          const currData = currentFrame.data;
-          const prevData = prevImageDataRef.current.data;
-          for (let i = 0; i < currData.length; i += 16) {
-            const diff = Math.abs(currData[i] - prevData[i]) +
-                         Math.abs(currData[i + 1] - prevData[i + 1]) +
-                         Math.abs(currData[i + 2] - prevData[i + 2]);
-            if (diff > 45) {
-              motionSum += diff;
+          const scaleX = offCanvas.width / overlayCanvas.width;
+          const scaleY = offCanvas.height / overlayCanvas.height;
+          const sampleX = Math.floor(roiX * scaleX);
+          const sampleY = Math.floor(roiY * scaleY);
+          const sampleW = Math.floor(roiWidth * scaleX);
+          const sampleH = Math.floor(roiHeight * scaleY);
+
+          const currentFrame = offCtx.getImageData(sampleX, sampleY, sampleW, sampleH);
+          let motionSum = 0;
+
+          if (prevImageDataRef.current && prevImageDataRef.current.data.length === currentFrame.data.length) {
+            const currData = currentFrame.data;
+            const prevData = prevImageDataRef.current.data;
+            for (let i = 0; i < currData.length; i += 16) {
+              const diff = Math.abs(currData[i] - prevData[i]) +
+                           Math.abs(currData[i + 1] - prevData[i + 1]) +
+                           Math.abs(currData[i + 2] - prevData[i + 2]);
+              if (diff > 40) {
+                motionSum += diff;
+              }
             }
           }
-        }
-        prevImageDataRef.current = currentFrame;
+          prevImageDataRef.current = currentFrame;
 
-        const normMotion = motionSum / (roiWidth * roiHeight * 0.1);
-        motionHistoryRef.current.push(normMotion);
-        if (motionHistoryRef.current.length > 120) {
-          motionHistoryRef.current.shift();
-        }
-
-        if (motionHistoryRef.current.length >= 64) {
-          const fft = computeFFT(motionHistoryRef.current, 30);
-          const { dominantFreq, maxPower } = findDominantTremorFrequency(fft);
-
-          if (dominantFreq > 0) {
-            let mdsScore = 0;
-            let status: 'normal' | 'borderline' | 'abnormal' = 'normal';
-            if (dominantFreq >= 4.0 && dominantFreq <= 6.2 && maxPower > 0.05) {
-              status = 'abnormal';
-              mdsScore = maxPower > 0.12 ? 3 : 2;
-            } else if (dominantFreq >= 7.5 && dominantFreq <= 11.5 && maxPower > 0.05) {
-              status = 'borderline';
-              mdsScore = 1;
-            }
-
-            const updated: TremorAnalysisResult = {
-              ...currentResult,
-              dominantFrequency: dominantFreq,
-              tremorAmplitude: Number(maxPower.toFixed(3)),
-              peakPsd: Number(maxPower.toFixed(4)),
-              frequencySpectrum: fft,
-              mdsUpdrsSubscore: mdsScore,
-              status,
-              details:
-                status === 'abnormal'
-                  ? `Active ${dominantFreq.toFixed(1)} Hz resting tremor detected in Parkinsonian frequency band (4–6 Hz).`
-                  : status === 'borderline'
-                  ? `Higher frequency ${dominantFreq.toFixed(1)} Hz kinetic/postural oscillation detected (Essential Tremor profile).`
-                  : `Kinematic stability within normative physiological threshold.`,
-            };
-            setCurrentResult(updated);
-            onUpdate(updated);
+          const normMotion = motionSum / (sampleW * sampleH * 0.1);
+          motionHistoryRef.current.push(normMotion);
+          if (motionHistoryRef.current.length > 120) {
+            motionHistoryRef.current.shift();
           }
-        }
 
-        drawWaveform(motionHistoryRef.current);
-        drawSpectrum(currentResult.frequencySpectrum);
-      } catch (e) {
-        // gracefully ignore
+          if (motionHistoryRef.current.length >= 64) {
+            const fft = computeFFT(motionHistoryRef.current, 30);
+            const { dominantFreq, maxPower } = findDominantTremorFrequency(fft);
+
+            if (dominantFreq > 0) {
+              let mdsScore = 0;
+              let status: 'normal' | 'borderline' | 'abnormal' = 'normal';
+              if (dominantFreq >= 4.0 && dominantFreq <= 6.2 && maxPower > 0.05) {
+                status = 'abnormal';
+                mdsScore = maxPower > 0.12 ? 3 : 2;
+              } else if (dominantFreq >= 7.5 && dominantFreq <= 11.5 && maxPower > 0.05) {
+                status = 'borderline';
+                mdsScore = 1;
+              }
+
+              const updated: TremorAnalysisResult = {
+                ...currentResult,
+                dominantFrequency: dominantFreq,
+                tremorAmplitude: Number(maxPower.toFixed(3)),
+                peakPsd: Number(maxPower.toFixed(4)),
+                frequencySpectrum: fft,
+                mdsUpdrsSubscore: mdsScore,
+                status,
+                details:
+                  status === 'abnormal'
+                    ? `Live resting tremor detected at ${dominantFreq.toFixed(1)} Hz in Parkinsonian band (4–6 Hz).`
+                    : status === 'borderline'
+                    ? `Live ${dominantFreq.toFixed(1)} Hz kinetic oscillation detected (Essential Tremor band).`
+                    : `Kinematic stability within normative physiological threshold.`,
+              };
+              setCurrentResult(updated);
+              onUpdate(updated);
+            }
+          }
+
+          drawWaveform(motionHistoryRef.current);
+          drawSpectrum(currentResult.frequencySpectrum);
+        } catch (e) {
+          // ignore offscreen canvas read error
+        }
       }
 
       animFrameRef.current = requestAnimationFrame(processFrame);
@@ -309,6 +374,7 @@ export const TremorModule: React.FC<TremorModuleProps> = ({ initialResult, onUpd
 
   return (
     <div className="bg-slate-900/80 rounded-2xl border border-slate-800 p-5 shadow-xl">
+      {/* Header */}
       <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
         <div>
           <div className="flex items-center gap-2">
@@ -337,16 +403,22 @@ export const TremorModule: React.FC<TremorModuleProps> = ({ initialResult, onUpd
           </p>
         </div>
 
+        {/* Video Controls */}
         <div className="flex items-center gap-2">
           <button
             onClick={toggleWebcam}
+            disabled={isStreamLoading}
             className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg border transition-all ${
               isWebcamActive
                 ? 'bg-rose-900/60 hover:bg-rose-900 text-rose-200 border-rose-700'
                 : 'bg-cyan-600 hover:bg-cyan-500 text-slate-950 border-cyan-400 shadow-md shadow-cyan-500/20'
             }`}
           >
-            {isWebcamActive ? (
+            {isStreamLoading ? (
+              <>
+                <RefreshCw className="w-3.5 h-3.5 animate-spin" /> Starting Camera...
+              </>
+            ) : isWebcamActive ? (
               <>
                 <CameraOff className="w-3.5 h-3.5" /> Stop Camera
               </>
@@ -360,19 +432,33 @@ export const TremorModule: React.FC<TremorModuleProps> = ({ initialResult, onUpd
       </div>
 
       {cameraError && (
-        <div className="mb-4 p-3 rounded-xl bg-amber-950/40 border border-amber-800/50 text-amber-300 text-xs flex items-start gap-2">
-          <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
-          <span>{cameraError}</span>
+        <div className="mb-4 p-3.5 rounded-xl bg-amber-950/50 border border-amber-800/60 text-amber-300 text-xs space-y-1.5">
+          <div className="flex items-center gap-2 font-bold text-amber-200">
+            <ShieldAlert className="w-4 h-4 text-amber-400 shrink-0" />
+            <span>Camera Troubleshooting Note</span>
+          </div>
+          <p className="leading-relaxed pl-6">{cameraError}</p>
         </div>
       )}
 
+      {/* Main Grid: Video/Preview & Spectral Analysis */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
+        {/* Camera / Feed Viewport (5 cols) */}
         <div className="lg:col-span-5 flex flex-col justify-between rounded-xl bg-slate-950 border border-slate-800 p-3 relative overflow-hidden min-h-[260px]">
           <div className="relative w-full aspect-video bg-slate-900 rounded-lg overflow-hidden flex items-center justify-center border border-slate-800/80">
-            <video ref={videoRef} className="hidden" playsInline muted autoPlay />
+            {/* Live Video Element */}
+            <video
+              ref={videoRef}
+              className={`w-full h-full object-cover transform -scale-x-100 ${isWebcamActive ? 'block' : 'hidden'}`}
+              playsInline
+              muted
+              autoPlay
+            />
+
+            {/* Transparent HUD Canvas Overlay */}
             <canvas
               ref={canvasRef}
-              className={`w-full h-full object-cover ${isWebcamActive ? 'block' : 'hidden'}`}
+              className={`absolute inset-0 w-full h-full pointer-events-none ${isWebcamActive ? 'block' : 'hidden'}`}
             />
 
             {!isWebcamActive && (
@@ -381,20 +467,21 @@ export const TremorModule: React.FC<TremorModuleProps> = ({ initialResult, onUpd
                   <Camera className="w-6 h-6" />
                 </div>
                 <p className="text-xs font-medium text-slate-300">Live Camera Standby</p>
-                <p className="text-[11px] text-slate-500 max-w-[200px] mx-auto mt-1">
-                  Click 'Start Live Camera' to hold hand in frame, or switch presets to view benchmark data.
+                <p className="text-[11px] text-slate-500 max-w-[220px] mx-auto mt-1">
+                  Click 'Start Live Camera' above to track your hand, or switch presets to view benchmark data.
                 </p>
               </div>
             )}
 
             {isWebcamActive && (
-              <div className="absolute top-2 left-2 flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-rose-950/80 border border-rose-600/80 text-[10px] text-rose-300 font-mono">
-                <span className="w-2 h-2 rounded-full bg-rose-500 animate-ping" />
+              <div className="absolute top-2 left-2 flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-slate-950/90 border border-cyan-500/80 text-[10px] text-cyan-300 font-mono">
+                <span className="w-2 h-2 rounded-full bg-cyan-400 animate-ping" />
                 OPTICAL FLOW ACTIVE (30 FPS)
               </div>
             )}
           </div>
 
+          {/* Interactive Tap Test Section */}
           <div className="mt-3 pt-3 border-t border-slate-800/80">
             <div className="flex items-center justify-between text-xs mb-2">
               <span className="font-semibold text-slate-200">Finger Tapping Test (Item 3.4)</span>
@@ -426,7 +513,9 @@ export const TremorModule: React.FC<TremorModuleProps> = ({ initialResult, onUpd
           </div>
         </div>
 
+        {/* Real-time Charts & Kinematic Metrics (7 cols) */}
         <div className="lg:col-span-7 flex flex-col justify-between gap-3">
+          {/* Waveform & Spectrum */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div className="bg-slate-950 p-3 rounded-xl border border-slate-800">
               <div className="flex items-center justify-between mb-1.5">
@@ -461,6 +550,7 @@ export const TremorModule: React.FC<TremorModuleProps> = ({ initialResult, onUpd
             </div>
           </div>
 
+          {/* Biomarker Stats Grid */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
             <div className="bg-slate-950/90 p-2.5 rounded-xl border border-slate-800">
               <span className="text-[10px] text-slate-400 font-medium block">Tremor Frequency</span>
@@ -525,6 +615,7 @@ export const TremorModule: React.FC<TremorModuleProps> = ({ initialResult, onUpd
             </div>
           </div>
 
+          {/* Clinical Interpretation note */}
           <div className="p-2.5 rounded-xl bg-slate-950/70 border border-slate-800/80 text-xs text-slate-300 flex items-start gap-2">
             <Activity className="w-4 h-4 text-cyan-400 shrink-0 mt-0.5" />
             <span>{currentResult.details}</span>
