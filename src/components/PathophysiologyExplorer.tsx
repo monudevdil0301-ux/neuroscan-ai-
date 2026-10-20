@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Brain, Zap, Sparkles } from 'lucide-react';
 
 interface PathophysiologyExplorerProps {
@@ -8,8 +8,12 @@ interface PathophysiologyExplorerProps {
 export const PathophysiologyExplorer: React.FC<PathophysiologyExplorerProps> = ({ currentRiskScore }) => {
   const [levodopaState, setLevodopaState] = useState<'OFF' | 'ON'>('OFF');
   const [dopamineDeficitPct, setDopamineDeficitPct] = useState<number>(
-    Math.min(85, Math.max(15, Math.round(currentRiskScore * 0.8 + 10)))
+    Math.min(85, Math.max(10, Math.round(currentRiskScore * 0.8 + 10)))
   );
+
+  useEffect(() => {
+    setDopamineDeficitPct(Math.min(90, Math.max(5, Math.round(currentRiskScore * 0.85 + 5))));
+  }, [currentRiskScore]);
 
   const toggleLevodopa = () => {
     setLevodopaState((prev) => (prev === 'OFF' ? 'ON' : 'OFF'));

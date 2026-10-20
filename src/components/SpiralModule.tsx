@@ -14,13 +14,47 @@ export const SpiralModule: React.FC<SpiralModuleProps> = ({ initialResult, onUpd
   const [points, setPoints] = useState<{ x: number; y: number; time: number }[]>([]);
   const [currentResult, setCurrentResult] = useState<SpiralAnalysisResult>(initialResult);
 
+  const drawTrajectory = (isPathological: boolean, isMicrographia: boolean) => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    drawBaseCanvas();
+
+    const centerX = canvas.width / 2;
+    const centerY = canvas.height / 2;
+    const maxRadius = (Math.min(canvas.width, canvas.height) / 2) * (isMicrographia ? 0.54 : 0.85);
+    const b = maxRadius / (4 * 2 * Math.PI);
+    const steps = 300;
+
+    ctx.strokeStyle = isPathological ? '#f43f5e' : '#22d3ee';
+    ctx.lineWidth = 2.5;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+
+    for (let i = 0; i < steps; i++) {
+      const theta = (i / steps) * (4 * 2 * Math.PI);
+      let r = b * theta;
+      if (isPathological) {
+        const tremorOsc = Math.sin(theta * 14) * (isMicrographia ? 7 : 11);
+        r += tremorOsc;
+      }
+      const x = centerX + r * Math.cos(theta);
+      const y = centerY + r * Math.sin(theta);
+      if (i === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+  };
+
   useEffect(() => {
     setCurrentResult(initialResult);
-    drawBaseCanvas();
+    drawTrajectory(initialResult.status === 'abnormal', initialResult.micrographiaRatio < 0.78);
   }, [initialResult]);
 
   useEffect(() => {
-    drawBaseCanvas();
+    drawTrajectory(initialResult.status === 'abnormal', initialResult.micrographiaRatio < 0.78);
   }, []);
 
   const drawBaseCanvas = () => {

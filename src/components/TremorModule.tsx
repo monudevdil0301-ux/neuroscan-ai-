@@ -252,6 +252,22 @@ export const TremorModule: React.FC<TremorModuleProps> = ({ initialResult, onUpd
     animFrameRef.current = requestAnimationFrame(processFrame);
   };
 
+  const generateSimulatedWaveform = (freq: number, amp: number) => {
+    const points: number[] = [];
+    const N = 80;
+    for (let i = 0; i < N; i++) {
+      const t = i / 30;
+      let val = 0.5;
+      if (freq >= 3.0) {
+        val = 0.5 + Math.sin(2 * Math.PI * freq * t) * Math.min(0.42, amp * 1.8) + (Math.sin(2 * Math.PI * (freq * 2) * t) * 0.04);
+      } else {
+        val = 0.5 + Math.sin(2 * Math.PI * 0.8 * t) * 0.05;
+      }
+      points.push(val);
+    }
+    return points;
+  };
+
   const drawWaveform = (history: number[]) => {
     const canvas = waveformCanvasRef.current;
     if (!canvas) return;
@@ -268,18 +284,18 @@ export const TremorModule: React.FC<TremorModuleProps> = ({ initialResult, onUpd
     ctx.lineTo(canvas.width, canvas.height / 2);
     ctx.stroke();
 
-    if (history.length < 2) return;
+    const data = history.length >= 2 ? history : generateSimulatedWaveform(currentResult.dominantFrequency, currentResult.tremorAmplitude);
 
-    ctx.strokeStyle = currentResult.status === 'abnormal' ? '#f43f5e' : '#06b6d4';
+    ctx.strokeStyle = currentResult.status === 'abnormal' ? '#f43f5e' : currentResult.status === 'borderline' ? '#38bdf8' : '#06b6d4';
     ctx.lineWidth = 2;
     ctx.beginPath();
 
-    const step = canvas.width / (history.length - 1);
+    const step = canvas.width / (data.length - 1);
     const midY = canvas.height / 2;
 
-    for (let i = 0; i < history.length; i++) {
+    for (let i = 0; i < data.length; i++) {
       const x = i * step;
-      const y = midY - (history[i] - 0.5) * (canvas.height * 0.7);
+      const y = midY - (data[i] - 0.5) * (canvas.height * 0.7);
       if (i === 0) ctx.moveTo(x, y);
       else ctx.lineTo(x, y);
     }
@@ -370,7 +386,8 @@ export const TremorModule: React.FC<TremorModuleProps> = ({ initialResult, onUpd
 
   useEffect(() => {
     drawSpectrum(currentResult.frequencySpectrum);
-  }, [currentResult.frequencySpectrum]);
+    drawWaveform(motionHistoryRef.current);
+  }, [currentResult]);
 
   return (
     <div className="bg-slate-900/80 rounded-2xl border border-slate-800 p-5 shadow-xl">

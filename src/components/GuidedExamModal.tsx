@@ -5,7 +5,7 @@ import confetti from 'canvas-confetti';
 interface GuidedExamModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onComplete: () => void;
+  onComplete: (userTaps: number) => void;
   onOpenReport: () => void;
 }
 
@@ -60,7 +60,7 @@ export const GuidedExamModal: React.FC<GuidedExamModalProps> = ({
       origin: { y: 0.6 },
       colors: ['#06b6d4', '#14b8a6', '#6366f1', '#10b981'],
     });
-    onComplete();
+    onComplete(tapCount);
   };
 
   return (

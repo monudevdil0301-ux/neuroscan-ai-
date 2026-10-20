@@ -161,7 +161,7 @@ export const ClinicalReportModal: React.FC<ClinicalReportModalProps> = ({
               <tbody className="divide-y divide-slate-800 print:divide-slate-300 text-[11px]">
                 <tr>
                   <td className="py-2 px-3 font-semibold text-slate-200 print:text-black">Computer Vision</td>
-                  <td className="py-2 px-3 font-mono">Rest Tremor: {tremor.dominantFrequency.toFixed(1)} Hz</td>
+                  <td className="py-2 px-3 font-mono">{tremor.dominantFrequency < 3.0 ? 'Rest Tremor: None detected (<3.0 Hz)' : `Rest Tremor: ${tremor.dominantFrequency.toFixed(1)} Hz`}</td>
                   <td className="py-2 px-3 text-slate-400 print:text-slate-600">N/A (4-6 Hz is PD)</td>
                   <td className="py-2 px-3 font-mono">Item 3.17</td>
                   <td className="py-2 px-3 font-bold uppercase">{tremor.status}</td>

@@ -64,6 +64,28 @@ export const App: React.FC = () => {
     handleSelectPreset('healthy');
   };
 
+  const handleExamComplete = (userTaps: number) => {
+    if (userTaps >= 3) {
+      const cadence = Number((userTaps / 10).toFixed(1));
+      const cv = userTaps > 24 ? 9.8 : 26.4;
+      const decay = userTaps > 24 ? 7.5 : 29.2;
+      const mdsScore = userTaps > 24 ? 0 : 2;
+      const updatedTremor: TremorAnalysisResult = {
+        ...tremor,
+        tapCount: userTaps,
+        tapCadenceHz: cadence,
+        tapRhythmCV: cv,
+        amplitudeDecay: decay,
+        mdsUpdrsSubscore: mdsScore,
+        details: userTaps > 24 
+          ? `Guided test complete: brisk tapping cadence (${cadence} Hz) with regular rhythm.`
+          : `Guided test complete: reduced tapping cadence (${cadence} Hz) with progressive fatigue.`,
+      };
+      setTremor(updatedTremor);
+      setAssessment(computeCompositeAssessment(updatedTremor, voice, spiral));
+    }
+  };
+
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col selection:bg-cyan-500 selection:text-white">
       {/* Navigation Header */}
@@ -225,7 +247,7 @@ export const App: React.FC = () => {
       <GuidedExamModal
         isOpen={isGuidedExamOpen}
         onClose={() => setIsGuidedExamOpen(false)}
-        onComplete={() => {}}
+        onComplete={handleExamComplete}
         onOpenReport={() => setIsReportOpen(true)}
       />
     </div>

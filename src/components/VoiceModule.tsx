@@ -25,8 +25,61 @@ export const VoiceModule: React.FC<VoiceModuleProps> = ({ initialResult, onUpdat
   const waveformCanvasRef = useRef<HTMLCanvasElement>(null);
   const fftCanvasRef = useRef<HTMLCanvasElement>(null);
 
+  const drawSimulatedVoiceCanvases = (result: VoiceAnalysisResult) => {
+    const waveCanvas = waveformCanvasRef.current;
+    if (waveCanvas) {
+      const wCtx = waveCanvas.getContext('2d');
+      if (wCtx) {
+        wCtx.fillStyle = '#090d16';
+        wCtx.fillRect(0, 0, waveCanvas.width, waveCanvas.height);
+
+        wCtx.strokeStyle = result.status === 'abnormal' ? '#f43f5e' : result.status === 'borderline' ? '#f59e0b' : '#06b6d4';
+        wCtx.lineWidth = 2;
+        wCtx.beginPath();
+
+        const N = waveCanvas.width;
+        const f0 = result.fundamentalFrequency || 130;
+        const jitter = result.jitterPercent || 0.5;
+
+        for (let x = 0; x < N; x++) {
+          const t = x / 35;
+          const jitterNoise = (Math.sin(x * 0.4) * (jitter / 100)) * 12;
+          const y = (waveCanvas.height / 2) + Math.sin(t * (f0 / 22) + jitterNoise) * (waveCanvas.height * 0.35);
+          if (x === 0) wCtx.moveTo(x, y);
+          else wCtx.lineTo(x, y);
+        }
+        wCtx.stroke();
+      }
+    }
+
+    const fCanvas = fftCanvasRef.current;
+    if (fCanvas) {
+      const fCtx = fCanvas.getContext('2d');
+      if (fCtx) {
+        fCtx.fillStyle = '#090d16';
+        fCtx.fillRect(0, 0, fCanvas.width, fCanvas.height);
+
+        const barCount = 32;
+        const barWidth = (fCanvas.width / barCount) * 0.75;
+        let bx = 0;
+        for (let i = 0; i < barCount; i++) {
+          const harmonicFactor = i % 4 === 1 ? 0.9 : i % 2 === 0 ? 0.4 : 0.15;
+          const decay = Math.exp(-i / 10);
+          const barHeight = Math.max(4, (harmonicFactor * decay) * fCanvas.height * 0.85);
+
+          fCtx.fillStyle = i < 6 ? '#22d3ee' : result.status === 'abnormal' ? '#f43f5e' : '#0ea5e9';
+          fCtx.fillRect(bx, fCanvas.height - barHeight, barWidth, barHeight);
+          bx += barWidth + 2;
+        }
+      }
+    }
+  };
+
   useEffect(() => {
     setCurrentResult(initialResult);
+    if (!isMicActive && !isPlayingSynthSample) {
+      drawSimulatedVoiceCanvases(initialResult);
+    }
   }, [initialResult]);
 
   useEffect(() => {
